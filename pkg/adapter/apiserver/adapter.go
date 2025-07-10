@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	cloudevents "github.com/cloudevents/sdk-go/v2"
@@ -86,6 +87,15 @@ func (a *apiServerAdapter) start(ctx context.Context, stopCh <-chan struct{}) er
 	}
 
 	a.logger.Infof("STARTING -- %#v", a.config)
+	if a.config.SkippedPermissions {
+		a.logger.Info("ApiServerSource skipped checking permissions so watches will be attempted only once")
+	}
+
+	watchCtx, cancelWatchers := context.WithCancel(ctx)
+	defer cancelWatchers()
+
+	var wg sync.WaitGroup
+	errorChan := make(chan error, 1)
 
 	for _, configRes := range a.config.Resources {
 
@@ -108,12 +118,24 @@ func (a *apiServerAdapter) start(ctx context.Context, stopCh <-chan struct{}) er
 
 				for _, res := range resources {
 					lw := &cache.ListWatch{
-						ListFunc:  asUnstructuredLister(ctx, res.List, configRes.LabelSelector),
-						WatchFunc: asUnstructuredWatcher(ctx, res.Watch, configRes.LabelSelector),
+						ListFunc:  asUnstructuredLister(watchCtx, res.List, configRes.LabelSelector),
+						WatchFunc: asUnstructuredWatcher(watchCtx, res.Watch, configRes.LabelSelector),
 					}
 
 					reflector := cache.NewReflector(lw, &unstructured.Unstructured{}, delegate, resyncPeriod)
-					go reflector.Run(stop)
+					if a.config.SkippedPermissions {
+						wg.Add(1)
+						go func() {
+							defer wg.Done()
+							reflector.ListAndWatch(stop)
+							select {
+							case errorChan <- fmt.Errorf("failed to watch"):
+							default:
+							}
+						}()
+					} else {
+						go reflector.Run(stop)
+					}
 				}
 
 				exists = true
@@ -123,9 +145,13 @@ func (a *apiServerAdapter) start(ctx context.Context, stopCh <-chan struct{}) er
 
 		if !exists {
 			a.logger.Errorf("could not retrieve information about resource %s: it doesn't exist", configRes.GVR.String())
+			if a.config.SkippedPermissions {
+				return fmt.Errorf("resource %s does not exist", configRes.GVR.String())
+			}
 		}
 	}
 
+	// Start HTTP server for health checks
 	srv := &http.Server{
 		Addr: ":8080",
 		// Configure read header timeout to overcome potential Slowloris Attack because ReadHeaderTimeout is not
@@ -137,8 +163,31 @@ func (a *apiServerAdapter) start(ctx context.Context, stopCh <-chan struct{}) er
 	}
 	go srv.ListenAndServe()
 
-	<-stopCh
-	stop <- struct{}{}
+	// Handle different modes based on SkippedPermissions configuration
+	if a.config.SkippedPermissions {
+		go func() {
+			wg.Wait()
+			close(errorChan)
+		}()
+
+		select {
+		case err := <-errorChan:
+			if err != nil {
+				a.logger.Errorf("ApiServerSource failed: %v", err)
+				cancelWatchers()
+				srv.Shutdown(ctx)
+				return err
+			}
+		case <-stopCh:
+			cancelWatchers()
+			srv.Shutdown(ctx)
+			return nil
+		}
+	} else {
+		<-stopCh
+	}
+
+	close(stop)
 	srv.Shutdown(ctx)
 	return nil
 }
