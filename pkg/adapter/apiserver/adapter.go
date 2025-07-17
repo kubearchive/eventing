@@ -19,6 +19,7 @@ package apiserver
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 
@@ -122,6 +123,17 @@ func (a *apiServerAdapter) startResilient(ctx context.Context, stopCh <-chan str
 		}
 	}
 
+	srv := &http.Server{
+		Addr: ":8080",
+		// Configure read header timeout to overcome potential Slowloris Attack because ReadHeaderTimeout is not
+		// configured in the http.Server.
+		ReadHeaderTimeout: 10 * time.Second,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+	}
+	go srv.ListenAndServe()
+
 	<-stopCh
 	close(stop)
 	return nil
@@ -168,6 +180,21 @@ func (a *apiServerAdapter) startFailFast(ctx context.Context, stopCh <-chan stru
 			}()
 		}
 	}
+
+	wg.Add(1)
+	srv := &http.Server{
+		Addr: ":8080",
+		// Configure read header timeout to overcome potential Slowloris Attack because ReadHeaderTimeout is not
+		// configured in the http.Server.
+		ReadHeaderTimeout: 10 * time.Second,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+	}
+	go func() {
+		defer wg.Done()
+		srv.ListenAndServe()
+	}()
 
 	go func() {
 		wg.Wait()
