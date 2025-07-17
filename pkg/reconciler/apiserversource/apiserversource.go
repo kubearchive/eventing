@@ -151,7 +151,7 @@ func (r *Reconciler) ReconcileKind(ctx context.Context, source *v1.ApiServerSour
 	// which also serves our purposes as by default we will check permissions
 	annotations := source.GetAnnotations()
 	skipPermissions := annotations[skipPermissionsAnnotation]
-	if skipPermissions == "true" {
+	if skipPermissions != "false" {
 		// If skip permissions, mark enough permissions directly
 		source.Status.MarkSufficientPermissions()
 	} else {
@@ -250,7 +250,7 @@ func (r *Reconciler) createReceiveAdapter(ctx context.Context, src *v1.ApiServer
 		Namespaces:    namespaces,
 		AllNamespaces: allNamespaces,
 		NodeSelector:  featureFlags.NodeSelector(),
-		FailFast:      skipPermissions == "true",
+		FailFast:      skipPermissions != "false",
 	}
 
 	expected, err := resources.MakeReceiveAdapter(&adapterArgs)
