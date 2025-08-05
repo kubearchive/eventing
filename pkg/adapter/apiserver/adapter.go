@@ -101,7 +101,7 @@ func (a *apiServerAdapter) startResilient(ctx context.Context, stopCh <-chan str
 	// Local stop channel.
 	stop := make(chan struct{})
 
-	resyncPeriod := 10 * time.Hour
+	resyncPeriod := 1 * time.Hour
 
 	a.logger.Infof("STARTING -- %#v", a.config)
 
