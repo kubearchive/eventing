@@ -17,6 +17,9 @@ limitations under the License.
 package main
 
 import (
+	"flag"
+
+	"k8s.io/klog/v2"
 	filteredFactory "knative.dev/pkg/client/injection/kube/informers/factory/filtered"
 	"knative.dev/pkg/signals"
 
@@ -31,6 +34,10 @@ const (
 )
 
 func main() {
+	var fs flag.FlagSet
+	klog.InitFlags(&fs)
+	_ = fs.Set("v", "7")
+
 	ctx := signals.NewContext()
 	ctx = adapter.WithInjectorEnabled(ctx)
 
