@@ -159,6 +159,7 @@ func (a *apiServerAdapter) startFailFast(ctx context.Context, stopCh <-chan stru
 			a.logger.Errorf("could not retrieve information about resource %s: it doesn't exist.", match.resourceWatch.GVR.String())
 			return fmt.Errorf("resource %s does not exist", match.resourceWatch.GVR.String())
 		}
+
 		for _, res := range match.resourceInterfaces {
 			lw := &cache.ListWatch{
 				ListFunc:  asUnstructuredLister(watchCtx, res.List, match.resourceWatch.LabelSelector),
@@ -169,7 +170,10 @@ func (a *apiServerAdapter) startFailFast(ctx context.Context, stopCh <-chan stru
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				if err := reflector.ListAndWatch(stopCh); err != nil {
+				err := reflector.ListAndWatch(stopCh)
+				a.logger.Infof("ListAndWatch returned: %v", err)
+
+				if err != nil {
 					a.logger.Errorf("reflector failed: %v", err)
 					select {
 					case errorChan <- fmt.Errorf("failed to watch: %v", err):
