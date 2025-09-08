@@ -101,7 +101,7 @@ func (a *apiServerAdapter) startResilient(ctx context.Context, stopCh <-chan str
 	// Local stop channel.
 	stop := make(chan struct{})
 
-	resyncPeriod := 1 * time.Hour
+	resyncPeriod := 10 * time.Hour
 
 	a.logger.Infof("STARTING -- %#v", a.config)
 
@@ -170,17 +170,11 @@ func (a *apiServerAdapter) startFailFast(ctx context.Context, stopCh <-chan stru
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				err := reflector.ListAndWatch(stopCh)
-				a.logger.Infof("ListAndWatch returned: %v", err)
+				reflector.Run(stopCh)
 
-				if err != nil {
-					a.logger.Errorf("reflector failed: %v", err)
-					select {
-					case errorChan <- fmt.Errorf("failed to watch: %v", err):
-					default:
-					}
-					cancelWatchers()
-				}
+				errorChan <- fmt.Errorf("reflector.Run for %s stopped running", match.resourceWatch.GVR.String())
+
+				cancelWatchers()
 			}()
 		}
 	}
