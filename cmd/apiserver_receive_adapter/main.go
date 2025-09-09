@@ -36,7 +36,7 @@ const (
 func main() {
 	var fs flag.FlagSet
 	klog.InitFlags(&fs)
-	_ = fs.Set("v", "7")
+	_ = fs.Set("v", "4")
 
 	ctx := signals.NewContext()
 	ctx = adapter.WithInjectorEnabled(ctx)
